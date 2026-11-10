@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>싹둑 — 광고 문자 수신거부</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+<style>
+  :root {
+    --paper: #F4F6F8; --sheet: #FFFFFF; --ink: #17233B; --muted: #5E6A7D;
+    --line: #D9DEE6; --cut: #E0352B; --cut-ink: #FFFFFF; --ok: #1E8458;
+    --note-bg: #FFF4E5; --note: #8A4B00; --chip: #E9EDF3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10151F; --sheet: #182030; --ink: #E8ECF3; --muted: #9AA5B8;
+      --line: #2C3648; --cut: #FF5A4E; --cut-ink: #1A0B09; --ok: #4CC38A;
+      --note-bg: #3A2A12; --note: #FFC977; --chip: #243044;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-tap-highlight-color: transparent;
+    padding: calc(env(safe-area-inset-top, 0px) + 28px) 20px calc(env(safe-area-inset-bottom, 0px) + 48px);
+  }
+  main { max-width: 440px; margin: 0 auto; }
+  .hidden { display: none !important; }
+
+  .mark { position: relative; display: inline-block; font-size: 56px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; user-select: none; -webkit-user-select: none; }
+  .mark::after { content: ""; position: absolute; left: -6px; right: -6px; top: 54%; border-top: 3px dashed var(--cut); transform: rotate(-4deg); }
+  .lede { color: var(--muted); margin: 14px 0 26px; }
+
+  .panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+  h2 { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .field-label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  input[type=tel], input[type=number] {
+    width: 100%; font: inherit; color: var(--ink); background: var(--paper);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  .num { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  input:focus, button:focus-visible, a:focus-visible, summary:focus-visible, .pick:focus-within { outline: 2px solid var(--cut); outline-offset: 2px; }
+  .saved { font-size: 13px; color: var(--ok); margin-top: 6px; min-height: 1.4em; }
+
+  .pick, .btn {
+    display: flex; align-items: center; justify-content: center; width: 100%;
+    font: inherit; font-weight: 700; border-radius: 12px; padding: 14px; cursor: pointer;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--sheet);
+  }
+  .pick input { display: none; }
+  .btn.quiet { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 600; padding: 10px 12px; width: auto; font-size: 14px; }
+  .status { font-size: 14px; color: var(--muted); min-height: 1.6em; margin: 10px 0 0; }
+  .status.ok { color: var(--ok); } .status.err { color: var(--cut); }
+
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+  .brand-picks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+  .toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin-top: 12px; }
+  .toggle input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--cut); flex: none; }
+  .toggle small { color: var(--muted); font-size: 13px; display: block; }
+
+  #summary { font-weight: 700; margin: 22px 2px 10px; }
+
+  .ad { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+  .ad-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .ad-brand { position: relative; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .ad-src { font-size: 12px; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .ad.done .ad-brand { color: var(--muted); }
+  .ad.done .ad-brand::after { content: ""; position: absolute; left: -4px; right: -4px; top: 52%; border-top: 3px dashed var(--cut); transform: rotate(-3deg); }
+  .ad.done .ad-body { display: none; }
+  .ad-done { color: var(--ok); font-weight: 700; margin: 8px 0 0; }
+
+  .steps { list-style: none; counter-reset: s; margin: 14px 0 0; padding: 0; font-size: 14px; }
+  .steps li { counter-increment: s; display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-top: 1px dashed var(--line); }
+  .steps li:first-child { border-top: 0; }
+  .steps li::before { content: counter(s); color: var(--muted); font-variant-numeric: tabular-nums; width: 1.2em; flex: none; }
+  .steps .who { margin-left: auto; font-size: 12px; border-radius: 999px; padding: 1px 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+  .steps .who.auto { background: transparent; border: 1px solid var(--cut); color: var(--cut); }
+
+  .tune { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .tune label { font-size: 13px; color: var(--muted); display: block; }
+  .tune input { margin-top: 6px; padding: 10px 12px; }
+
+  .call {
+    display: block; text-align: center; margin-top: 16px; padding: 18px; border-radius: 14px;
+    background: var(--cut); color: var(--cut-ink); font-size: 18px; font-weight: 800; text-decoration: none;
+  }
+  .call.off { background: var(--chip); color: var(--muted); }
+  .note { background: var(--note-bg); color: var(--note); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
+  .after { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .after p { margin: 0 0 10px; font-size: 14px; }
+  .after-row { display: flex; gap: 8px; }
+  .after-row .btn { padding: 12px; font-size: 15px; }
+  .after-row .btn.alt { background: transparent; color: var(--ink); border-color: var(--line); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ad { animation: open .25s ease-out; }
+    @keyframes open { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark" id="mark">싹둑</div>
+  <p class="lede">메시지함 캡처 한 장이면, 광고 문자 수신거부 전화를 대신 눌러드려요.</p>
+
+  <section class="panel">
+    <h2>내 휴대폰 번호</h2>
+    <p class="hint">ARS에 자동으로 입력할 번호예요. 이 기기에만 저장돼요.</p>
+    <input type="tel" id="myPhone" class="num" inputmode="numeric" placeholder="01012345678" maxlength="13" autocomplete="tel">
+    <div class="saved" id="phoneSaved"></div>
+  </section>
+
+  <section class="panel">
+    <h2>메시지함 캡처 올리기</h2>
+    <p class="hint">광고 문자가 보이는 화면을 캡처해서 올리면, 수신거부할 수 있는 곳을 찾아요.</p>
+    <label class="pick" tabindex="0">캡처 올리기
+      <input type="file" id="imageInput" accept="image/*">
+    </label>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <details id="manual">
+      <summary>목록에서 직접 고르기</summary>
+      <div class="brand-picks" id="brandPicks"></div>
+    </details>
+
+    <details>
+      <summary>시연 설정</summary>
+      <label class="toggle"><input type="checkbox" id="allowHash">
+        <span>내 번호 입력 뒤 # 자동으로 누르기
+          <small>아이폰은 #이 들어가면 전화가 걸리지 않을 수 있어요. 리허설에서 확인하고 정하세요.</small></span>
+      </label>
+    </details>
+  </section>
+
+  <p id="summary" class="hidden"></p>
+  <div id="list"></div>
+</main>
+
+<script>
+  /* ============================================================
+     브랜드 DB — 시연 전에 number 칸에 실제 080 번호를 넣으세요.
+     (팀원 휴대폰에 온 실제 광고 문자 하단의 "무료수신거부 080-…" 번호)
+     number가 비어 있으면 전화 버튼이 잠기고, 화면에서 직접 입력할 수도 있어요.
+
+     기본 흐름:  전화 연결 → 대기 → 내 번호 입력(→ #) → 대기 → 1번(해제)
+     브랜드마다 다르면 아래 값을 항목에 덧붙이면 돼요.
+       waitBeforePhone   : 연결 후 내 번호를 누르기 전 대기(초)
+       waitBeforeConfirm : 번호 입력 후 해제 버튼 전 대기(초)
+       confirmKey        : 해제 버튼 번호 (기본 '1')
+       raw               : 흐름이 아예 다른 곳은 순서를 직접 지정
+                           예) ',,1,,,{PHONE}#,,,,1'   (쉼표 하나 ≈ 2초)
+     ============================================================ */
+  const BRAND_DB = [
+    { brand: '무신사',     aliases: ['무신사', 'MUSINSA'],               number: '' },
+    { brand: '쿠팡',       aliases: ['쿠팡', 'COUPANG'],                 number: '0808880585' },
+    { brand: '올리브영',   aliases: ['올리브영', 'OLIVEYOUNG'],          number: '' },
+    { brand: '지그재그',   aliases: ['지그재그', 'ZIGZAG'],              number: '' },
+    { brand: '에이블리',   aliases: ['에이블리', 'ABLY'],                number: '' },
+    { brand: '배달의민족', aliases: ['배달의민족', '배민'],              number: '' },
+  ];
+  const DEFAULTS = { waitBeforePhone: 6, waitBeforeConfirm: 10, confirmKey: '1' };
+  const PAUSE_SEC = 2;   // 쉼표 하나가 만드는 대기 시간(초). 기기에서 실제로 재보고 맞추세요.
+
+  const $ = id => document.getElementById(id);
+  const digits = s => (s || '').replace(/[^0-9]/g, '');
+  const squash = s => (s || '').toLowerCase().replace(/\s/g, '');
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const store = {
+    get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch { return fb; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  };
+  const fmt080 = d => d.length === 10 ? `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}` : d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : d;
+  const maskPhone = d => d.length >= 10 ? `${d.slice(0,3)}-****-${d.slice(-4)}` : '내 번호';
+
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function setStatus(msg, kind) { $('status').textContent = msg; $('status').className = 'status' + (kind ? ' ' + kind : ''); }
+
+  // ---------- 내 번호 · 설정 ----------
+  $('myPhone').value = store.get('myPhone', '');
+  if ($('myPhone').value) $('phoneSaved').textContent = '저장됨';
+  $('myPhone').addEventListener('input', () => {
+    const d = digits($('myPhone').value);
+    if (d.length >= 10) { store.set('myPhone', d); $('phoneSaved').textContent = '저장됨'; } else $('phoneSaved').textContent = '';
+    refreshAll();
+  });
+  $('allowHash').checked = store.get('allowHash', !isIOS);
+  $('allowHash').addEventListener('change', () => { store.set('allowHash', $('allowHash').checked); refreshAll(); });
+
+  // ---------- 브랜드별 설정 (코드의 DB + 화면에서 고친 값) ----------
+  function settingsFor(entry) {
+    const over = store.get('overrides', {})[entry.brand] || {};
+    return Object.assign({}, DEFAULTS, entry, over);
+  }
+  function saveOverride(brand, patch) {
+    const all = store.get('overrides', {});
+    all[brand] = Object.assign({}, all[brand], patch);
+    store.set('overrides', all);
+  }
+
+  // ---------- 다이얼 순서 만들기 ----------
+  const commas = sec => ','.repeat(Math.max(1, Math.round(sec / PAUSE_SEC)));
+  function buildDial(s) {
+    const phone = digits($('myPhone').value);
+    const hash = $('allowHash').checked;
+    let seq;
+    if (s.raw) {
+      seq = s.raw.replace(/\{PHONE\}/g, phone).replace(/[^0-9,;#*]/g, '');
+      if (!hash) seq = seq.replace(/[#*]/g, '');
+    } else {
+      seq = commas(s.waitBeforePhone) + phone + (hash ? '#' : '') + commas(s.waitBeforeConfirm) + digits(s.confirmKey).slice(0, 1);
+    }
+    const number = digits(s.number);
+    return { number, phone, seq, href: 'tel:' + number + seq.replace(/#/g, '%23').replace(/\*/g, '%2A') };
+  }
+  function describe(s) {
+    const phone = digits($('myPhone').value);
+    const out = [['전화 걸기 버튼 누르기', false]];
+    if (s.raw) {
+      const tokens = s.raw.match(/,+|\{PHONE\}|[0-9]+|[#*;]/g) || [];
+      tokens.forEach(t => {
+        if (t[0] === ',') out.push([`${t.length * PAUSE_SEC}초 기다림`, true]);
+        else if (t === '{PHONE}') out.push([`내 번호 ${maskPhone(phone)} 입력`, true]);
+        else if (t === '#' || t === '*') { if ($('allowHash').checked) out.push([`${t} 누르기`, true]); }
+        else if (t === ';') out.push(['화면의 다음 버튼 누르기', false]);
+        else out.push([`${t}번 누르기`, true]);
+      });
+    } else {
+      out.push([`${commas(s.waitBeforePhone).length * PAUSE_SEC}초 기다림`, true]);
+      out.push([`내 번호 ${maskPhone(phone)} 입력`, true]);
+      if ($('allowHash').checked) out.push(['# 누르기', true]);
+      out.push([`${commas(s.waitBeforeConfirm).length * PAUSE_SEC}초 기다림`, true]);
+      out.push([`${digits(s.confirmKey).slice(0, 1)}번 누르기 (해제)`, true]);
+    }
+    return out;
+  }
+
+  // ---------- 광고 카드 ----------
+  const cards = [];
+  function refreshAll() { cards.forEach(c => c.refresh()); updateSummary(); }
+  function updateSummary() {
+    const total = cards.length, done = cards.filter(c => c.isDone()).length;
+    $('summary').classList.toggle('hidden', total === 0);
+    $('summary').textContent = done ? `광고 ${total}곳 중 ${done}곳 해제 완료` : `수신거부할 수 있는 광고 ${total}곳`;
+  }
+  function clearCards() { cards.length = 0; $('list').textContent = ''; updateSummary(); }
+
+  function addCard(entry, sourceLabel, readNumber) {
+    if (cards.some(c => c.brand === entry.brand)) return;
+    if (readNumber && !settingsFor(entry).number) saveOverride(entry.brand, { number: readNumber });
+
+    const card = el('article', 'ad');
+    const head = el('div', 'ad-head');
+    head.append(el('span', 'ad-brand', entry.brand), el('span', 'ad-src', sourceLabel));
+    const doneMsg = el('p', 'ad-done hidden', '수신거부 완료');
+    const body = el('div', 'ad-body');
+
+    const numLabel = el('label', 'field-label', '080 수신거부 번호');
+    const numInput = el('input', 'num'); numInput.type = 'tel'; numInput.inputMode = 'numeric'; numInput.placeholder = '0801234567';
+    numInput.value = settingsFor(entry).number || '';
+    numLabel.append(numInput);
+
+    const steps = el('ol', 'steps');
+
+    const tuneBox = el('details');
+    tuneBox.append(el('summary', '', '타이밍 조정'));
+    const tune = el('div', 'tune');
+    function numField(label, key, max) {
+      const l = el('label', '', label); const i = el('input', 'num'); i.type = 'number'; i.inputMode = 'numeric'; i.min = 0; i.max = max; i.step = key === 'confirmKey' ? 1 : PAUSE_SEC;
+      i.value = settingsFor(entry)[key];
+      i.addEventListener('input', () => { if (i.value !== '') { saveOverride(entry.brand, { [key]: key === 'confirmKey' ? String(i.value) : Number(i.value) }); refresh(); } });
+      l.append(i); return l;
+    }
+    if (settingsFor(entry).raw) {
+      tuneBox.append(el('p', 'hint', '이 브랜드는 코드의 BRAND_DB에 순서(raw)가 직접 지정돼 있어요.'));
+    } else {
+      tune.append(numField('번호 입력 전 대기(초)', 'waitBeforePhone', 60), numField('해제 버튼 전 대기(초)', 'waitBeforeConfirm', 60), numField('해제 버튼 번호', 'confirmKey', 9));
+      tuneBox.append(tune);
+    }
+
+    const call = el('a', 'call'); call.href = '#';
+    const warn = el('div', 'note hidden');
+    const after = el('div', 'after hidden');
+    after.append(el('p', '', '통화가 끝나면 결과를 알려주세요.'));
+    const row = el('div', 'after-row');
+    const yes = el('button', 'btn', '해제됐어요'); yes.type = 'button';
+    const no = el('button', 'btn alt', '안 됐어요'); no.type = 'button';
+    row.append(yes, no); after.append(row);
+
+    body.append(numLabel, steps, tuneBox, call, warn, after);
+    card.append(head, doneMsg, body);
+    $('list').append(card);
+
+    function refresh() {
+      const s = settingsFor(entry); const d = buildDial(s);
+      steps.textContent = '';
+      describe(s).forEach(([text, auto]) => {
+        const li = el('li'); li.append(el('span', '', text), el('span', 'who' + (auto ? ' auto' : ''), auto ? '자동' : '직접')); steps.append(li);
+      });
+      const ready = d.number.length >= 10 && d.phone.length >= 10;
+      call.classList.toggle('off', !ready);
+      call.href = ready ? d.href : '#';
+      call.textContent = d.number.length >= 10 ? `${fmt080(d.number)} 전화 걸기` : '080 번호를 먼저 입력하세요';
+      const needsHashNote = !$('allowHash').checked;
+      warn.classList.toggle('hidden', !needsHashNote);
+      warn.textContent = 'ARS가 # 을 요구하면, 내 번호가 입력된 뒤 키패드에서 # 을 직접 눌러주세요.';
+    }
+    numInput.addEventListener('input', () => { saveOverride(entry.brand, { number: digits(numInput.value) }); refresh(); });
+    call.addEventListener('click', e => {
+      const d = buildDial(settingsFor(entry));
+      if (d.phone.length < 10) { e.preventDefault(); $('myPhone').focus(); $('myPhone').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      if (d.number.length < 10) { e.preventDefault(); numInput.focus(); return; }
+      after.classList.remove('hidden');
+    });
+    yes.addEventListener('click', () => { card.classList.add('done'); doneMsg.classList.remove('hidden'); updateSummary(); });
+    no.addEventListener('click', () => { tuneBox.open = true; after.classList.add('hidden'); tuneBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+
+    cards.push({ brand: entry.brand, refresh, isDone: () => card.classList.contains('done') });
+    refresh(); updateSummary();
+  }
+
+  // ---------- 직접 고르기 ----------
+  BRAND_DB.forEach(b => {
+    const btn = el('button', 'btn quiet', b.brand); btn.type = 'button';
+    btn.addEventListener('click', () => { addCard(b, '직접 고름'); $('list').lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    $('brandPicks').append(btn);
+  });
+
+  // ---------- 캡처 읽기 ----------
+  let workerPromise = null;
+  function getWorker() { if (!workerPromise) workerPromise = Tesseract.createWorker('kor+eng'); return workerPromise; }
+  window.addEventListener('load', () => {
+    if (!window.Tesseract) { setStatus('글자 인식 엔진을 불러오지 못했어요. 목록에서 직접 골라주세요.', 'err'); return; }
+    setStatus('캡처를 읽을 준비 중…');
+    getWorker().then(() => setStatus('준비됐어요.')).catch(() => setStatus('글자 인식 엔진을 불러오지 못했어요. 목록에서 직접 골라주세요.', 'err'));
+  });
+
+  function loadImage(file) {
+    return new Promise((res, rej) => { const url = URL.createObjectURL(file); const img = new Image(); img.onload = () => { URL.revokeObjectURL(url); res(img); }; img.onerror = rej; img.src = url; });
+  }
+  async function preprocess(file) {   // 흑백 + 확대 + 대비, 다크 모드 캡처는 반전
+    const img = await loadImage(file);
+    const scale = Math.min(2, 2200 / img.width);
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+    const data = ctx.getImageData(0, 0, c.width, c.height), p = data.data; let sum = 0;
+    for (let i = 0; i < p.length; i += 4) { const g = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; p[i] = g; sum += g; }
+    const invert = sum / (p.length / 4) < 110;
+    for (let i = 0; i < p.length; i += 4) { let g = invert ? 255 - p[i] : p[i]; g = Math.max(0, Math.min(255, (g - 128) * 1.5 + 128)); p[i] = p[i + 1] = p[i + 2] = g; }
+    ctx.putImageData(data, 0, 0); return c;
+  }
+
+  function analyze(text) {
+    const flat = squash(text);
+    const numText = text.replace(/[OoＯ]/g, '0').replace(/[lI|｜]/g, '1').replace(/[‐‑–—―~〜]/g, '-').replace(/\s/g, '');
+    const nums = [...new Set((numText.match(/080[-.)]?\d{3,4}[-.]?\d{4}/g) || []).map(digits))].filter(n => n.length === 10 || n.length === 11);
+    const matched = BRAND_DB.filter(b =>
+      b.aliases.some(a => flat.includes(squash(a))) || nums.includes(digits(settingsFor(b).number)));
+    return { matched, nums };
+  }
+
+  function showResults(r) {
+    clearCards();
+    const known = BRAND_DB.map(b => digits(settingsFor(b).number)).filter(Boolean);
+    const spare = r.nums.filter(n => !known.includes(n));           // 캡처에 보이지만 DB에 없는 080 번호
+    r.matched.forEach(b => {
+      const fill = !settingsFor(b).number && r.matched.length === 1 && spare.length === 1 ? spare.shift() : '';
+      addCard(b, '캡처에서 찾음', fill);
+    });
+    spare.forEach(n => addCard({ brand: `미등록 ${fmt080(n)}`, aliases: [], number: n }, '캡처에서 읽은 번호'));
+    if (cards.length) {
+      if (r.matched.length) store.set('lastMatches', r.matched.map(b => b.brand));
+      setStatus(`광고 ${cards.length}곳을 찾았어요.`, 'ok');
+      $('summary').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      setStatus('등록된 브랜드를 찾지 못했어요. 목록에서 직접 골라주세요.', 'err');
+      $('manual').open = true;
+    }
+  }
+
+  $('imageInput').addEventListener('change', async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    if (!window.Tesseract) { setStatus('글자 인식을 쓸 수 없어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true; return; }
+    try {
+      setStatus('캡처에서 광고 문자를 찾는 중…');
+      const [worker, canvas] = await Promise.all([getWorker(), preprocess(file)]);
+      const { data } = await worker.recognize(canvas);
+      showResults(analyze(data.text));
+    } catch (err) {
+      console.error(err);
+      setStatus('캡처를 읽지 못했어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true;
+    }
+  });
+
+  // ---------- 시연 비상 버튼: 로고를 빠르게 세 번 누르면 마지막 성공 결과를 다시 보여줘요 ----------
+  let taps = 0, tapTimer = null;
+  $('mark').addEventListener('click', () => {
+    taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 600);
+    if (taps < 3) return; taps = 0;
+    const names = store.get('lastMatches', []);
+    const matched = BRAND_DB.filter(b => names.includes(b.brand));
+    if (!matched.length) return;
+    setStatus('캡처에서 광고 문자를 찾는 중…');
+    setTimeout(() => showResults({ matched, nums: [] }), 1100);
+  });
+</script>
+</body>
+</html>
