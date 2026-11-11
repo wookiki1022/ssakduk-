@@ -159,7 +159,7 @@
      ============================================================ */
   const PHONE = { phone: true }, HASH = { hash: true };
   // 기본 순서: 연결 후 18초에 내 번호 + # → 5초 뒤 1번(수신거부)
-  const DEFAULT_STEPS = [{ wait: 18 }, PHONE, HASH, { wait: 5 }, { press: '1', label: '수신거부' }];
+  const DEFAULT_STEPS = [{ wait: 12 }, PHONE, HASH, { wait: 5 }, { press: '1', label: '수신거부' }];
   const defaultSteps = () => DEFAULT_STEPS;
   const STEPS_VERSION = 3;   // 기본 타이밍을 바꾸면 숫자를 올리세요. 예전에 화면에서 조정한 값이 초기화돼요.
   const BRAND_DB = [
