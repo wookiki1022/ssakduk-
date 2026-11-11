@@ -39,7 +39,7 @@
   h2 { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
   .hint { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
   .field-label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
-  input[type=tel], input[type=number] {
+  input[type=tel], input[type=number], select {
     width: 100%; font: inherit; color: var(--ink); background: var(--paper);
     border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
   }
@@ -113,7 +113,7 @@
 
   <section class="panel">
     <h2>내 휴대폰 번호</h2>
-    <p class="hint">번호 입력을 요구하는 ARS에만 쓰여요. 이 기기에만 저장돼요.</p>
+    <p class="hint">ARS에 자동으로 입력할 번호예요. 이 기기에만 저장돼요.</p>
     <input type="tel" id="myPhone" class="num" inputmode="numeric" placeholder="01012345678" maxlength="13" autocomplete="tel">
     <div class="saved" id="phoneSaved"></div>
   </section>
@@ -158,11 +158,14 @@
      steps가 없는 브랜드는 DEFAULT_STEPS를 써요.
      ============================================================ */
   const PHONE = { phone: true }, HASH = { hash: true };
-  // 직접 걸어본 결과(쿠팡·아디다스 등): 안내 15~20초 뒤 1번만 누르면 수신거부되는 곳이 많아요.
-  const DEFAULT_STEPS = [{ wait: 18 }, { press: '1', label: '수신거부' }];
+  // 기본 순서: 연결 후 18초에 내 번호 + # → 5초 뒤 1번(수신거부)
+  const DEFAULT_STEPS = [{ wait: 18 }, PHONE, HASH, { wait: 5 }, { press: '1', label: '수신거부' }];
+  const defaultSteps = () => DEFAULT_STEPS;
+  const STEPS_VERSION = 3;   // 기본 타이밍을 바꾸면 숫자를 올리세요. 예전에 화면에서 조정한 값이 초기화돼요.
   const BRAND_DB = [
     // 흐름이 다른 곳만 steps를 따로 적으세요.
-    //   예) 번호 입력이 필요한 곳: steps: [{ wait: 18 }, { press: '1' }, { wait: 8 }, PHONE, HASH]
+    //   예) 안내 뒤 1번만 누르는 곳: steps: [{ wait: 15 }, { press: '1', label: '수신거부' }]
+    //   예) 전화만 걸면 해제되는 곳: steps: [{ note: '연결되면 자동으로 해제' }]
     { brand: '쿠팡',       aliases: ['쿠팡', 'COUPANG', 'Coupang'], number: '' },
     { brand: '아디다스',   aliases: ['아디다스', 'ADIDAS', 'adidas'], number: '' },
     { brand: '무신사',     aliases: ['무신사', 'MUSINSA'],      number: '' },
@@ -210,20 +213,22 @@
   })();
   function settingsFor(entry) {
     const over = store.get('ov3', {})[entry.brand] || {};
-    return { brand: entry.brand, number: over.number || entry.number || '', steps: over.steps || entry.steps || DEFAULT_STEPS, edited: !!over.steps };
+    const useOver = over.steps && over.v === STEPS_VERSION;
+    return { brand: entry.brand, number: over.number || entry.number || '', steps: useOver ? over.steps : (entry.steps || defaultSteps()), edited: !!useOver };
   }
   function saveOverride(brand, patch) { const all = store.get('ov3', {}); all[brand] = Object.assign({}, all[brand], patch); store.set('ov3', all); }
   function resetSteps(brand) { const all = store.get('ov3', {}); if (all[brand]) { delete all[brand].steps; store.set('ov3', all); } }
 
   // ---------- 다이얼 문자열 ----------
-  const commaCount = sec => Math.max(1, Math.round(sec / pauseSec()));
+  // 쉼표 단위로 딱 떨어지지 않으면 올림해서 조금 늦게 눌러요 (일찍 누르면 무시될 수 있어서)
+  const commaCount = sec => Math.max(1, Math.ceil(sec / pauseSec() - 1e-9));
   function buildDial(s) {
     const phone = digits($('myPhone').value), hash = $('allowHash').checked;
     let seq = s.steps.map(st =>
       st.wait !== undefined ? ','.repeat(commaCount(st.wait)) :
       st.press ? digits(st.press).slice(0, 1) :
       st.phone ? phone :
-      st.hash ? (hash ? '#' : '') : '').join('');
+      st.hash ? (hash ? '#' : '') : '').join('');   // note 단계는 아무것도 누르지 않아요
     seq = seq.replace(/,+$/, '');
     const number = digits(s.number);
     return { number, phone, href: 'tel:' + number + seq.replace(/#/g, '%23') };
@@ -236,7 +241,8 @@
       if (st.wait !== undefined) { t += commaCount(st.wait) * pauseSec(); return; }
       if (st.press) out.push([`${st.press}번 누르기${st.label ? ` (${st.label})` : ''}`, true, t]);
       else if (st.phone) out.push([`내 번호 ${maskPhone(phone)} 입력`, true, t]);
-      else if (st.hash) out.push([hash ? '# 누르기' : '# 직접 누르기 (요구할 때만)', hash, hash ? t : null]);
+      else if (st.hash) out.push([hash ? '# 누르기' : '# 직접 누르기', hash, hash ? t : null]);
+      else if (st.note) out.push([st.note, true, null]);
     });
     return out;
   }
@@ -244,6 +250,7 @@
   // ---------- 광고 카드 ----------
   const cards = [];
   function refreshAll() { cards.forEach(c => c.refresh()); updateSummary(); }
+  function retuneAll() { cards.forEach(c => { c.retune(); c.refresh(); }); updateSummary(); }
   function updateSummary() {
     const total = cards.length, done = cards.filter(c => c.isDone()).length;
     $('summary').classList.toggle('hidden', total === 0);
@@ -275,6 +282,7 @@
     function buildTune() {
       tune.textContent = '';
       const st = settingsFor(entry).steps;
+      if (!st.some(x => x.wait !== undefined)) { tune.append(el('p', 'hint', '이 방식은 조정할 대기 시간이 없어요.')); }
       st.forEach((step, i) => {
         if (step.wait === undefined) return;
         const next = st.slice(i + 1).find(x => x.wait === undefined) || {};
@@ -284,7 +292,7 @@
         inp.addEventListener('input', () => {
           const v = Number(inp.value); if (inp.value === '' || v < 0 || v > 90) return;
           const copy = settingsFor(entry).steps.map(x => Object.assign({}, x)); copy[i].wait = v;
-          saveOverride(entry.brand, { steps: copy }); refresh();
+          saveOverride(entry.brand, { steps: copy, v: STEPS_VERSION }); refresh();
         });
         l.append(inp); tune.append(l);
       });
@@ -332,7 +340,7 @@
     yes.addEventListener('click', () => { card.classList.add('done'); doneMsg.classList.remove('hidden'); updateSummary(); });
     no.addEventListener('click', () => { tuneBox.open = true; after.classList.add('hidden'); tuneBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
 
-    cards.push({ brand: entry.brand, refresh, isDone: () => card.classList.contains('done') });
+    cards.push({ brand: entry.brand, refresh, retune: buildTune, isDone: () => card.classList.contains('done') });
     buildTune(); refresh(); updateSummary();
   }
 
