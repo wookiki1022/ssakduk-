@@ -80,7 +80,8 @@
   .steps li { counter-increment: s; display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-top: 1px dashed var(--line); }
   .steps li:first-child { border-top: 0; }
   .steps li::before { content: counter(s); color: var(--muted); font-variant-numeric: tabular-nums; width: 1.2em; flex: none; }
-  .steps .who { margin-left: auto; font-size: 12px; border-radius: 999px; padding: 1px 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+  .steps .t { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .steps .who { margin-left: 8px; font-size: 12px; border-radius: 999px; padding: 1px 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
   .steps .who.auto { background: transparent; border: 1px solid var(--cut); color: var(--cut); }
 
   .tune { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
@@ -112,7 +113,7 @@
 
   <section class="panel">
     <h2>내 휴대폰 번호</h2>
-    <p class="hint">ARS에 자동으로 입력할 번호예요. 이 기기에만 저장돼요.</p>
+    <p class="hint">번호 입력을 요구하는 ARS에만 쓰여요. 이 기기에만 저장돼요.</p>
     <input type="tel" id="myPhone" class="num" inputmode="numeric" placeholder="01012345678" maxlength="13" autocomplete="tel">
     <div class="saved" id="phoneSaved"></div>
   </section>
@@ -136,6 +137,9 @@
         <span>내 번호 입력 뒤 # 자동으로 누르기
           <small>아이폰은 #이 들어가면 전화가 걸리지 않을 수 있어요. 리허설에서 확인하고 정하세요.</small></span>
       </label>
+      <label class="field-label" for="pauseSec">쉼표 하나의 대기 시간(초)</label>
+      <input type="number" id="pauseSec" class="num" inputmode="decimal" min="0.5" max="5" step="0.5">
+      <p class="hint" style="margin-top:6px">리허설에서 버튼이 안내보다 빨리 눌리면 값을 줄이고, 늦게 눌리면 늘리세요. 모든 브랜드에 함께 적용돼요.</p>
     </details>
   </section>
 
@@ -145,28 +149,28 @@
 
 <script>
   /* ============================================================
-     브랜드 DB — 시연 전에 number 칸에 실제 080 번호를 넣으세요.
-     (팀원 휴대폰에 온 실제 광고 문자 하단의 "무료수신거부 080-…" 번호)
-     number가 비어 있으면 전화 버튼이 잠기고, 화면에서 직접 입력할 수도 있어요.
-
-     기본 흐름:  전화 연결 → 대기 → 내 번호 입력(→ #) → 대기 → 1번(해제)
-     브랜드마다 다르면 아래 값을 항목에 덧붙이면 돼요.
-       waitBeforePhone   : 연결 후 내 번호를 누르기 전 대기(초)
-       waitBeforeConfirm : 번호 입력 후 해제 버튼 전 대기(초)
-       confirmKey        : 해제 버튼 번호 (기본 '1')
-       raw               : 흐름이 아예 다른 곳은 순서를 직접 지정
-                           예) ',,1,,,{PHONE}#,,,,1'   (쉼표 하나 ≈ 2초)
+     브랜드 DB — number 칸에 실제 080 번호(숫자만)를 넣으세요.
+     steps: 전화 연결 후 순서대로 실행돼요.
+       { wait: 초 }        기다리기 (쉼표로 변환, 쉼표 하나 ≈ pauseSec초)
+       { press: '1' }      번호 하나 누르기
+       PHONE               내 휴대폰 번호 입력
+       HASH                # 누르기 (아이폰은 시연 설정에서 켜야 보내요)
+     steps가 없는 브랜드는 DEFAULT_STEPS를 써요.
      ============================================================ */
+  const PHONE = { phone: true }, HASH = { hash: true };
+  // 직접 걸어본 결과(쿠팡·아디다스 등): 안내 15~20초 뒤 1번만 누르면 수신거부되는 곳이 많아요.
+  const DEFAULT_STEPS = [{ wait: 18 }, { press: '1', label: '수신거부' }];
   const BRAND_DB = [
-    { brand: '무신사',     aliases: ['무신사', 'MUSINSA'],               number: '' },
-    { brand: '쿠팡',       aliases: ['쿠팡', 'COUPANG'],                 number: '0808880585' },
-    { brand: '올리브영',   aliases: ['올리브영', 'OLIVEYOUNG'],          number: '' },
-    { brand: '지그재그',   aliases: ['지그재그', 'ZIGZAG'],              number: '' },
-    { brand: '에이블리',   aliases: ['에이블리', 'ABLY'],                number: '' },
-    { brand: '배달의민족', aliases: ['배달의민족', '배민'],              number: '' },
+    // 흐름이 다른 곳만 steps를 따로 적으세요.
+    //   예) 번호 입력이 필요한 곳: steps: [{ wait: 18 }, { press: '1' }, { wait: 8 }, PHONE, HASH]
+    { brand: '쿠팡',       aliases: ['쿠팡', 'COUPANG', 'Coupang'], number: '' },
+    { brand: '아디다스',   aliases: ['아디다스', 'ADIDAS', 'adidas'], number: '' },
+    { brand: '무신사',     aliases: ['무신사', 'MUSINSA'],      number: '' },
+    { brand: '올리브영',   aliases: ['올리브영', 'OLIVEYOUNG'], number: '' },
+    { brand: '지그재그',   aliases: ['지그재그', 'ZIGZAG'],     number: '' },
+    { brand: '에이블리',   aliases: ['에이블리', 'ABLY'],       number: '' },
+    { brand: '배달의민족', aliases: ['배달의민족', '배민'],     number: '' },
   ];
-  const DEFAULTS = { waitBeforePhone: 6, waitBeforeConfirm: 10, confirmKey: '1' };
-  const PAUSE_SEC = 2;   // 쉼표 하나가 만드는 대기 시간(초). 기기에서 실제로 재보고 맞추세요.
 
   const $ = id => document.getElementById(id);
   const digits = s => (s || '').replace(/[^0-9]/g, '');
@@ -178,11 +182,11 @@
   };
   const fmt080 = d => d.length === 10 ? `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}` : d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : d;
   const maskPhone = d => d.length >= 10 ? `${d.slice(0,3)}-****-${d.slice(-4)}` : '내 번호';
-
+  const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function setStatus(msg, kind) { $('status').textContent = msg; $('status').className = 'status' + (kind ? ' ' + kind : ''); }
 
-  // ---------- 내 번호 · 설정 ----------
+  // ---------- 내 번호 · 시연 설정 ----------
   $('myPhone').value = store.get('myPhone', '');
   if ($('myPhone').value) $('phoneSaved').textContent = '저장됨';
   $('myPhone').addEventListener('input', () => {
@@ -192,52 +196,48 @@
   });
   $('allowHash').checked = store.get('allowHash', !isIOS);
   $('allowHash').addEventListener('change', () => { store.set('allowHash', $('allowHash').checked); refreshAll(); });
+  const pauseSec = () => { const v = Number(store.get('pauseSec', 2)); return v >= 0.5 && v <= 5 ? v : 2; };
+  $('pauseSec').value = pauseSec();
+  $('pauseSec').addEventListener('input', () => { const v = Number($('pauseSec').value); if (v >= 0.5 && v <= 5) { store.set('pauseSec', v); refreshAll(); } });
 
-  // ---------- 브랜드별 설정 (코드의 DB + 화면에서 고친 값) ----------
+  // ---------- 브랜드 설정 (코드 값 + 화면에서 고친 값) ----------
+  (function migrate() {
+    const old = store.get('ov2', null);
+    if (!old || store.get('ov3', null)) return;
+    const next = {};
+    Object.keys(old).forEach(k => { if (old[k].number) next[k] = { number: old[k].number }; });
+    store.set('ov3', next);
+  })();
   function settingsFor(entry) {
-    const over = store.get('overrides', {})[entry.brand] || {};
-    return Object.assign({}, DEFAULTS, entry, over);
+    const over = store.get('ov3', {})[entry.brand] || {};
+    return { brand: entry.brand, number: over.number || entry.number || '', steps: over.steps || entry.steps || DEFAULT_STEPS, edited: !!over.steps };
   }
-  function saveOverride(brand, patch) {
-    const all = store.get('overrides', {});
-    all[brand] = Object.assign({}, all[brand], patch);
-    store.set('overrides', all);
-  }
+  function saveOverride(brand, patch) { const all = store.get('ov3', {}); all[brand] = Object.assign({}, all[brand], patch); store.set('ov3', all); }
+  function resetSteps(brand) { const all = store.get('ov3', {}); if (all[brand]) { delete all[brand].steps; store.set('ov3', all); } }
 
-  // ---------- 다이얼 순서 만들기 ----------
-  const commas = sec => ','.repeat(Math.max(1, Math.round(sec / PAUSE_SEC)));
+  // ---------- 다이얼 문자열 ----------
+  const commaCount = sec => Math.max(1, Math.round(sec / pauseSec()));
   function buildDial(s) {
-    const phone = digits($('myPhone').value);
-    const hash = $('allowHash').checked;
-    let seq;
-    if (s.raw) {
-      seq = s.raw.replace(/\{PHONE\}/g, phone).replace(/[^0-9,;#*]/g, '');
-      if (!hash) seq = seq.replace(/[#*]/g, '');
-    } else {
-      seq = commas(s.waitBeforePhone) + phone + (hash ? '#' : '') + commas(s.waitBeforeConfirm) + digits(s.confirmKey).slice(0, 1);
-    }
+    const phone = digits($('myPhone').value), hash = $('allowHash').checked;
+    let seq = s.steps.map(st =>
+      st.wait !== undefined ? ','.repeat(commaCount(st.wait)) :
+      st.press ? digits(st.press).slice(0, 1) :
+      st.phone ? phone :
+      st.hash ? (hash ? '#' : '') : '').join('');
+    seq = seq.replace(/,+$/, '');
     const number = digits(s.number);
-    return { number, phone, seq, href: 'tel:' + number + seq.replace(/#/g, '%23').replace(/\*/g, '%2A') };
+    return { number, phone, href: 'tel:' + number + seq.replace(/#/g, '%23') };
   }
-  function describe(s) {
-    const phone = digits($('myPhone').value);
-    const out = [['전화 걸기 버튼 누르기', false]];
-    if (s.raw) {
-      const tokens = s.raw.match(/,+|\{PHONE\}|[0-9]+|[#*;]/g) || [];
-      tokens.forEach(t => {
-        if (t[0] === ',') out.push([`${t.length * PAUSE_SEC}초 기다림`, true]);
-        else if (t === '{PHONE}') out.push([`내 번호 ${maskPhone(phone)} 입력`, true]);
-        else if (t === '#' || t === '*') { if ($('allowHash').checked) out.push([`${t} 누르기`, true]); }
-        else if (t === ';') out.push(['화면의 다음 버튼 누르기', false]);
-        else out.push([`${t}번 누르기`, true]);
-      });
-    } else {
-      out.push([`${commas(s.waitBeforePhone).length * PAUSE_SEC}초 기다림`, true]);
-      out.push([`내 번호 ${maskPhone(phone)} 입력`, true]);
-      if ($('allowHash').checked) out.push(['# 누르기', true]);
-      out.push([`${commas(s.waitBeforeConfirm).length * PAUSE_SEC}초 기다림`, true]);
-      out.push([`${digits(s.confirmKey).slice(0, 1)}번 누르기 (해제)`, true]);
-    }
+  function timeline(s) {   // [설명, 자동 여부, 연결 후 시점(초)]
+    const phone = digits($('myPhone').value), hash = $('allowHash').checked;
+    const out = [['전화 걸기 버튼 누르기', false, null]];
+    let t = 0;
+    s.steps.forEach(st => {
+      if (st.wait !== undefined) { t += commaCount(st.wait) * pauseSec(); return; }
+      if (st.press) out.push([`${st.press}번 누르기${st.label ? ` (${st.label})` : ''}`, true, t]);
+      else if (st.phone) out.push([`내 번호 ${maskPhone(phone)} 입력`, true, t]);
+      else if (st.hash) out.push([hash ? '# 누르기' : '# 직접 누르기 (요구할 때만)', hash, hash ? t : null]);
+    });
     return out;
   }
 
@@ -263,25 +263,31 @@
 
     const numLabel = el('label', 'field-label', '080 수신거부 번호');
     const numInput = el('input', 'num'); numInput.type = 'tel'; numInput.inputMode = 'numeric'; numInput.placeholder = '0801234567';
-    numInput.value = settingsFor(entry).number || '';
+    numInput.value = settingsFor(entry).number;
     numLabel.append(numInput);
 
     const steps = el('ol', 'steps');
+    const tuneBox = el('details'); tuneBox.append(el('summary', '', '타이밍 조정'));
+    const tune = el('div', 'tune'); tuneBox.append(tune);
+    const resetBtn = el('button', 'btn quiet', '기본값으로 되돌리기'); resetBtn.type = 'button'; resetBtn.style.marginTop = '10px';
+    tuneBox.append(resetBtn);
 
-    const tuneBox = el('details');
-    tuneBox.append(el('summary', '', '타이밍 조정'));
-    const tune = el('div', 'tune');
-    function numField(label, key, max) {
-      const l = el('label', '', label); const i = el('input', 'num'); i.type = 'number'; i.inputMode = 'numeric'; i.min = 0; i.max = max; i.step = key === 'confirmKey' ? 1 : PAUSE_SEC;
-      i.value = settingsFor(entry)[key];
-      i.addEventListener('input', () => { if (i.value !== '') { saveOverride(entry.brand, { [key]: key === 'confirmKey' ? String(i.value) : Number(i.value) }); refresh(); } });
-      l.append(i); return l;
-    }
-    if (settingsFor(entry).raw) {
-      tuneBox.append(el('p', 'hint', '이 브랜드는 코드의 BRAND_DB에 순서(raw)가 직접 지정돼 있어요.'));
-    } else {
-      tune.append(numField('번호 입력 전 대기(초)', 'waitBeforePhone', 60), numField('해제 버튼 전 대기(초)', 'waitBeforeConfirm', 60), numField('해제 버튼 번호', 'confirmKey', 9));
-      tuneBox.append(tune);
+    function buildTune() {
+      tune.textContent = '';
+      const st = settingsFor(entry).steps;
+      st.forEach((step, i) => {
+        if (step.wait === undefined) return;
+        const next = st.slice(i + 1).find(x => x.wait === undefined) || {};
+        const what = next.press ? `${next.press}번 누르기 전` : next.phone ? '내 번호 입력 전' : next.hash ? '# 전' : '다음 단계 전';
+        const l = el('label', '', `${what} 대기(초)`);
+        const inp = el('input', 'num'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.min = 0; inp.max = 90; inp.step = 1; inp.value = step.wait;
+        inp.addEventListener('input', () => {
+          const v = Number(inp.value); if (inp.value === '' || v < 0 || v > 90) return;
+          const copy = settingsFor(entry).steps.map(x => Object.assign({}, x)); copy[i].wait = v;
+          saveOverride(entry.brand, { steps: copy }); refresh();
+        });
+        l.append(inp); tune.append(l);
+      });
     }
 
     const call = el('a', 'call'); call.href = '#';
@@ -298,23 +304,28 @@
     $('list').append(card);
 
     function refresh() {
-      const s = settingsFor(entry); const d = buildDial(s);
+      const s = settingsFor(entry), d = buildDial(s);
       steps.textContent = '';
-      describe(s).forEach(([text, auto]) => {
-        const li = el('li'); li.append(el('span', '', text), el('span', 'who' + (auto ? ' auto' : ''), auto ? '자동' : '직접')); steps.append(li);
+      timeline(s).forEach(([text, auto, t]) => {
+        const li = el('li');
+        li.append(el('span', '', text), el('span', 't', t === null ? '' : `연결 후 ${mmss(t)}`), el('span', 'who' + (auto ? ' auto' : ''), auto ? '자동' : '직접'));
+        steps.append(li);
       });
-      const ready = d.number.length >= 10 && d.phone.length >= 10;
+      const needPhone = s.steps.some(x => x.phone);
+      const ready = d.number.length >= 10 && (!needPhone || d.phone.length >= 10);
       call.classList.toggle('off', !ready);
       call.href = ready ? d.href : '#';
       call.textContent = d.number.length >= 10 ? `${fmt080(d.number)} 전화 걸기` : '080 번호를 먼저 입력하세요';
-      const needsHashNote = !$('allowHash').checked;
-      warn.classList.toggle('hidden', !needsHashNote);
+      warn.classList.toggle('hidden', !(s.steps.some(x => x.hash) && !$('allowHash').checked));
       warn.textContent = 'ARS가 # 을 요구하면, 내 번호가 입력된 뒤 키패드에서 # 을 직접 눌러주세요.';
+      resetBtn.classList.toggle('hidden', !s.edited);
     }
     numInput.addEventListener('input', () => { saveOverride(entry.brand, { number: digits(numInput.value) }); refresh(); });
+    resetBtn.addEventListener('click', () => { resetSteps(entry.brand); buildTune(); refresh(); });
     call.addEventListener('click', e => {
       const d = buildDial(settingsFor(entry));
-      if (d.phone.length < 10) { e.preventDefault(); $('myPhone').focus(); $('myPhone').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      const needPhone = settingsFor(entry).steps.some(x => x.phone);
+      if (needPhone && d.phone.length < 10) { e.preventDefault(); $('myPhone').focus(); $('myPhone').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
       if (d.number.length < 10) { e.preventDefault(); numInput.focus(); return; }
       after.classList.remove('hidden');
     });
@@ -322,7 +333,7 @@
     no.addEventListener('click', () => { tuneBox.open = true; after.classList.add('hidden'); tuneBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
 
     cards.push({ brand: entry.brand, refresh, isDone: () => card.classList.contains('done') });
-    refresh(); updateSummary();
+    buildTune(); refresh(); updateSummary();
   }
 
   // ---------- 직접 고르기 ----------
@@ -340,11 +351,10 @@
     setStatus('캡처를 읽을 준비 중…');
     getWorker().then(() => setStatus('준비됐어요.')).catch(() => setStatus('글자 인식 엔진을 불러오지 못했어요. 목록에서 직접 골라주세요.', 'err'));
   });
-
   function loadImage(file) {
     return new Promise((res, rej) => { const url = URL.createObjectURL(file); const img = new Image(); img.onload = () => { URL.revokeObjectURL(url); res(img); }; img.onerror = rej; img.src = url; });
   }
-  async function preprocess(file) {   // 흑백 + 확대 + 대비, 다크 모드 캡처는 반전
+  async function preprocess(file) {
     const img = await loadImage(file);
     const scale = Math.min(2, 2200 / img.width);
     const c = document.createElement('canvas'); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
@@ -355,35 +365,40 @@
     for (let i = 0; i < p.length; i += 4) { let g = invert ? 255 - p[i] : p[i]; g = Math.max(0, Math.min(255, (g - 128) * 1.5 + 128)); p[i] = p[i + 1] = p[i + 2] = g; }
     ctx.putImageData(data, 0, 0); return c;
   }
-
+  function find080(text) {   // 인식 실수(0↔O·D·Q, 1↔l·I, 8↔B)와 사이에 낀 기호까지 감안해서 080 번호 찾기
+    const t = text.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+      .replace(/[OoＯDQ]/g, '0').replace(/[lI|｜!]/g, '1').replace(/B/g, '8').replace(/\s/g, '');
+    const found = t.match(/080[^0-9]{0,2}\d{3,4}[^0-9]{0,2}\d{4}/g) || [];
+    return [...new Set(found.map(digits))].filter(n => n.length === 10 || n.length === 11);
+  }
+  function guessName(text) {   // "(광고) 브랜드명" 에서 브랜드명 추정
+    const m = text.replace(/\s+/g, ' ').match(/[\(\[（【]\s*광\s*고\s*[\)\]）】]\s*[\[【\(]?\s*([^\s\]\)】,.!:·]{1,15})/);
+    return m ? m[1] : '';
+  }
   function analyze(text) {
     const flat = squash(text);
-    const numText = text.replace(/[OoＯ]/g, '0').replace(/[lI|｜]/g, '1').replace(/[‐‑–—―~〜]/g, '-').replace(/\s/g, '');
-    const nums = [...new Set((numText.match(/080[-.)]?\d{3,4}[-.]?\d{4}/g) || []).map(digits))].filter(n => n.length === 10 || n.length === 11);
-    const matched = BRAND_DB.filter(b =>
-      b.aliases.some(a => flat.includes(squash(a))) || nums.includes(digits(settingsFor(b).number)));
-    return { matched, nums };
+    const nums = find080(text);
+    const matched = BRAND_DB.filter(b => b.aliases.some(a => flat.includes(squash(a))) || nums.includes(digits(settingsFor(b).number)));
+    return { matched, nums, guess: guessName(text) };
   }
-
   function showResults(r) {
     clearCards();
     const known = BRAND_DB.map(b => digits(settingsFor(b).number)).filter(Boolean);
-    const spare = r.nums.filter(n => !known.includes(n));           // 캡처에 보이지만 DB에 없는 080 번호
+    const spare = r.nums.filter(n => !known.includes(n));
     r.matched.forEach(b => {
       const fill = !settingsFor(b).number && r.matched.length === 1 && spare.length === 1 ? spare.shift() : '';
       addCard(b, '캡처에서 찾음', fill);
     });
-    spare.forEach(n => addCard({ brand: `미등록 ${fmt080(n)}`, aliases: [], number: n }, '캡처에서 읽은 번호'));
+    const named = !r.matched.length && spare.length === 1 && r.guess;
+    spare.forEach(n => addCard({ brand: named ? r.guess : `미등록 ${fmt080(n)}`, aliases: [], number: n }, '미등록 · 캡처에서 읽은 번호'));
     if (cards.length) {
       if (r.matched.length) store.set('lastMatches', r.matched.map(b => b.brand));
-      setStatus(`광고 ${cards.length}곳을 찾았어요.`, 'ok');
+      setStatus(r.matched.length ? `광고 ${cards.length}곳을 찾았어요.` : '등록된 기업은 아니지만 080 번호를 찾았어요. 기본 순서로 걸어볼게요.', 'ok');
       $('summary').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
-      setStatus('등록된 브랜드를 찾지 못했어요. 목록에서 직접 골라주세요.', 'err');
-      $('manual').open = true;
+      setStatus('등록된 브랜드를 찾지 못했어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true;
     }
   }
-
   $('imageInput').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = '';
     if (!file) return;
@@ -392,14 +407,24 @@
       setStatus('캡처에서 광고 문자를 찾는 중…');
       const [worker, canvas] = await Promise.all([getWorker(), preprocess(file)]);
       const { data } = await worker.recognize(canvas);
-      showResults(analyze(data.text));
+      const r = analyze(data.text);
+      if (!r.nums.length) {
+        setStatus('080 번호를 한 번 더 찾는 중…');
+        try {
+          await worker.setParameters({ tessedit_char_whitelist: '0123456789-' });
+          const second = await worker.recognize(canvas);
+          r.nums = find080(second.data.text);
+        } catch (e2) { console.error(e2); }
+        finally { try { await worker.setParameters({ tessedit_char_whitelist: '' }); } catch {} }
+        r.matched = BRAND_DB.filter(b => r.matched.includes(b) || r.nums.includes(digits(settingsFor(b).number)));
+      }
+      showResults(r);
     } catch (err) {
-      console.error(err);
-      setStatus('캡처를 읽지 못했어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true;
+      console.error(err); setStatus('캡처를 읽지 못했어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true;
     }
   });
 
-  // ---------- 시연 비상 버튼: 로고를 빠르게 세 번 누르면 마지막 성공 결과를 다시 보여줘요 ----------
+  // ---------- 시연 비상 버튼: 로고를 빠르게 세 번 → 마지막 성공 결과 ----------
   let taps = 0, tapTimer = null;
   $('mark').addEventListener('click', () => {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 600);
@@ -408,7 +433,7 @@
     const matched = BRAND_DB.filter(b => names.includes(b.brand));
     if (!matched.length) return;
     setStatus('캡처에서 광고 문자를 찾는 중…');
-    setTimeout(() => showResults({ matched, nums: [] }), 1100);
+    setTimeout(() => showResults({ matched, nums: [], guess: '' }), 1100);
   });
 </script>
 </body>
