@@ -120,7 +120,7 @@
 
   <section class="panel">
     <h2>메시지함 캡처 올리기</h2>
-    <p class="hint">광고 문자가 보이는 화면을 캡처해서 올리면, 수신거부할 수 있는 곳을 찾아요.</p>
+    <p class="hint">광고 문자가 보이는 화면을 캡처해서 올리면, 080 수신거부 번호를 찾아 바로 걸 수 있게 해드려요.</p>
     <label class="pick" tabindex="0">캡처 올리기
       <input type="file" id="imageInput" accept="image/*">
     </label>
@@ -158,7 +158,7 @@
      steps가 없는 브랜드는 DEFAULT_STEPS를 써요.
      ============================================================ */
   const PHONE = { phone: true }, HASH = { hash: true };
-  // 기본 순서: 연결 후 18초에 내 번호 + # → 5초 뒤 1번(수신거부)
+  // 기본 순서: 연결 후 12초에 내 번호 + # → 5초 뒤 1번(수신거부)
   const DEFAULT_STEPS = [{ wait: 12 }, PHONE, HASH, { wait: 5 }, { press: '1', label: '수신거부' }];
   const defaultSteps = () => DEFAULT_STEPS;
   const STEPS_VERSION = 3;   // 기본 타이밍을 바꾸면 숫자를 올리세요. 예전에 화면에서 조정한 값이 초기화돼요.
@@ -254,13 +254,12 @@
   function updateSummary() {
     const total = cards.length, done = cards.filter(c => c.isDone()).length;
     $('summary').classList.toggle('hidden', total === 0);
-    $('summary').textContent = done ? `광고 ${total}곳 중 ${done}곳 해제 완료` : `수신거부할 수 있는 광고 ${total}곳`;
+    $('summary').textContent = done ? `${total}곳 중 ${done}곳 해제 완료` : `수신거부할 수 있는 번호 ${total}개`;
   }
   function clearCards() { cards.length = 0; $('list').textContent = ''; updateSummary(); }
 
-  function addCard(entry, sourceLabel, readNumber) {
+  function addCard(entry, sourceLabel) {
     if (cards.some(c => c.brand === entry.brand)) return;
-    if (readNumber && !settingsFor(entry).number) saveOverride(entry.brand, { number: readNumber });
 
     const card = el('article', 'ad');
     const head = el('div', 'ad-head');
@@ -389,22 +388,24 @@
     const matched = BRAND_DB.filter(b => b.aliases.some(a => flat.includes(squash(a))) || nums.includes(digits(settingsFor(b).number)));
     return { matched, nums, guess: guessName(text) };
   }
+  // 캡처에서 찾은 080 번호마다 카드를 만들어요. 브랜드 DB에 있는 번호면 이름만 작게 표시해요.
   function showResults(r) {
     clearCards();
-    const known = BRAND_DB.map(b => digits(settingsFor(b).number)).filter(Boolean);
-    const spare = r.nums.filter(n => !known.includes(n));
-    r.matched.forEach(b => {
-      const fill = !settingsFor(b).number && r.matched.length === 1 && spare.length === 1 ? spare.shift() : '';
-      addCard(b, '캡처에서 찾음', fill);
-    });
-    const named = !r.matched.length && spare.length === 1 && r.guess;
-    spare.forEach(n => addCard({ brand: named ? r.guess : `미등록 ${fmt080(n)}`, aliases: [], number: n }, '미등록 · 캡처에서 읽은 번호'));
-    if (cards.length) {
-      if (r.matched.length) store.set('lastMatches', r.matched.map(b => b.brand));
-      setStatus(r.matched.length ? `광고 ${cards.length}곳을 찾았어요.` : '등록된 기업은 아니지만 080 번호를 찾았어요. 기본 순서로 걸어볼게요.', 'ok');
+    if (r.nums.length) {
+      r.nums.forEach(n => {
+        const known = BRAND_DB.find(b => digits(settingsFor(b).number) === n);
+        const label = known ? known.brand : (r.nums.length === 1 && r.guess ? r.guess : '캡처에서 찾음');
+        addCard({ brand: fmt080(n), aliases: [], number: n, steps: known && known.steps }, label);
+      });
+      store.set('lastNums', r.nums);
+      setStatus(`080 번호 ${r.nums.length}개를 찾았어요.`, 'ok');
+      $('summary').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (r.matched.length) {
+      r.matched.forEach(b => addCard(b, '캡처에서 찾음'));
+      setStatus('080 번호는 읽지 못했어요. 카드의 번호를 확인해주세요.', 'err');
       $('summary').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
-      setStatus('등록된 브랜드를 찾지 못했어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true;
+      setStatus('080 번호를 찾지 못했어요. 목록에서 고르거나 다시 캡처해주세요.', 'err'); $('manual').open = true;
     }
   }
   $('imageInput').addEventListener('change', async e => {
@@ -412,7 +413,7 @@
     if (!file) return;
     if (!window.Tesseract) { setStatus('글자 인식을 쓸 수 없어요. 목록에서 직접 골라주세요.', 'err'); $('manual').open = true; return; }
     try {
-      setStatus('캡처에서 광고 문자를 찾는 중…');
+      setStatus('캡처에서 080 번호를 찾는 중…');
       const [worker, canvas] = await Promise.all([getWorker(), preprocess(file)]);
       const { data } = await worker.recognize(canvas);
       const r = analyze(data.text);
@@ -437,11 +438,10 @@
   $('mark').addEventListener('click', () => {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 600);
     if (taps < 3) return; taps = 0;
-    const names = store.get('lastMatches', []);
-    const matched = BRAND_DB.filter(b => names.includes(b.brand));
-    if (!matched.length) return;
-    setStatus('캡처에서 광고 문자를 찾는 중…');
-    setTimeout(() => showResults({ matched, nums: [], guess: '' }), 1100);
+    const nums = store.get('lastNums', []);
+    if (!nums.length) return;
+    setStatus('캡처에서 080 번호를 찾는 중…');
+    setTimeout(() => showResults({ matched: [], nums, guess: '' }), 1100);
   });
 </script>
 </body>
