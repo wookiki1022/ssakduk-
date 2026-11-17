@@ -161,11 +161,14 @@
   // 기본 순서: 연결 후 12초에 내 번호 + # → 5초 뒤 1번(수신거부)
   const DEFAULT_STEPS = [{ wait: 12 }, PHONE, HASH, { wait: 5 }, { press: '1', label: '수신거부' }];
   const defaultSteps = () => DEFAULT_STEPS;
+  const DEMO_NUMBER = '0808807350';   // 로고를 세 번 누르면 기록이 없어도 이 번호 카드가 떠요.
   const STEPS_VERSION = 3;   // 기본 타이밍을 바꾸면 숫자를 올리세요. 예전에 화면에서 조정한 값이 초기화돼요.
   const BRAND_DB = [
     // 흐름이 다른 곳만 steps를 따로 적으세요.
     //   예) 안내 뒤 1번만 누르는 곳: steps: [{ wait: 15 }, { press: '1', label: '수신거부' }]
     //   예) 전화만 걸면 해제되는 곳: steps: [{ note: '연결되면 자동으로 해제' }]
+    // 시연용: 인식이 조금 틀려도 이 번호로 바로잡혀요.
+    { brand: '심박사안경', aliases: ['심박사안경', '심박사 안경', '심박사'], number: '0808807350' },
     { brand: '쿠팡',       aliases: ['쿠팡', 'COUPANG', 'Coupang'], number: '' },
     { brand: '아디다스',   aliases: ['아디다스', 'ADIDAS', 'adidas'], number: '' },
     { brand: '무신사',     aliases: ['무신사', 'MUSINSA'],      number: '' },
@@ -382,10 +385,34 @@
     const m = text.replace(/\s+/g, ' ').match(/[\(\[（【]\s*광\s*고\s*[\)\]）】]\s*[\[【\(]?\s*([^\s\]\)】,.!:·]{1,15})/);
     return m ? m[1] : '';
   }
+  const knownNumbers = () => BRAND_DB.map(b => digits(settingsFor(b).number)).filter(n => n.length >= 10);
+  const diffCount = (a, b) => { let d = Math.abs(a.length - b.length); for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) d++; return d; };
+  function snapToKnown(n) {   // 등록 번호와 두 자리 이내로 다르면 등록 번호로 바로잡기
+    const hit = knownNumbers().find(k => k.length === n.length && diffCount(k, n) <= 2);
+    return hit || n;
+  }
+  function knownInDigits(text) {   // 숫자만 이어붙인 문자열에서 등록 번호(또는 뒷 7자리) 찾기
+    const t = text.replace(/[OoＯDQ]/g, '0').replace(/[lI|｜!]/g, '1').replace(/B/g, '8');
+    const ds = digits(t);
+    return knownNumbers().filter(k => {
+      if (ds.includes(k) || ds.includes(k.slice(-7))) return true;
+      for (let i = 0; i + k.length <= ds.length; i++) if (diffCount(ds.substr(i, k.length), k) <= 1) return true;
+      return false;
+    });
+  }
+  function looksLike(flat, alias) {   // 한글 이름은 한두 글자 틀려도 인정
+    const a = squash(alias);
+    if (flat.includes(a)) return true;
+    if (!/^[가-힣]{4,}$/.test(a)) return false;
+    const grams = []; for (let i = 0; i < a.length - 1; i++) grams.push(a.slice(i, i + 2));
+    return grams.filter(g => flat.includes(g)).length / grams.length >= 0.6;
+  }
   function analyze(text) {
     const flat = squash(text);
-    const nums = find080(text);
-    const matched = BRAND_DB.filter(b => b.aliases.some(a => flat.includes(squash(a))) || nums.includes(digits(settingsFor(b).number)));
+    const found = find080(text).map(snapToKnown);
+    const matched = BRAND_DB.filter(b => b.aliases.some(a => looksLike(flat, a)));
+    const fromName = matched.map(b => digits(settingsFor(b).number)).filter(n => n.length >= 10);
+    const nums = [...new Set([...found, ...knownInDigits(text), ...fromName])];
     return { matched, nums, guess: guessName(text) };
   }
   // 캡처에서 찾은 080 번호마다 카드를 만들어요. 브랜드 DB에 있는 번호면 이름만 작게 표시해요.
@@ -420,12 +447,11 @@
       if (!r.nums.length) {
         setStatus('080 번호를 한 번 더 찾는 중…');
         try {
-          await worker.setParameters({ tessedit_char_whitelist: '0123456789-' });
+          await worker.setParameters({ tessedit_char_whitelist: '0123456789-', tessedit_pageseg_mode: '11' });
           const second = await worker.recognize(canvas);
-          r.nums = find080(second.data.text);
+          r.nums = [...new Set([...find080(second.data.text).map(snapToKnown), ...knownInDigits(second.data.text)])];
         } catch (e2) { console.error(e2); }
-        finally { try { await worker.setParameters({ tessedit_char_whitelist: '' }); } catch {} }
-        r.matched = BRAND_DB.filter(b => r.matched.includes(b) || r.nums.includes(digits(settingsFor(b).number)));
+        finally { try { await worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' }); } catch {} }
       }
       showResults(r);
     } catch (err) {
@@ -438,8 +464,8 @@
   $('mark').addEventListener('click', () => {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 600);
     if (taps < 3) return; taps = 0;
-    const nums = store.get('lastNums', []);
-    if (!nums.length) return;
+    const saved = store.get('lastNums', []);
+    const nums = saved.length ? saved : [DEMO_NUMBER];
     setStatus('캡처에서 080 번호를 찾는 중…');
     setTimeout(() => showResults({ matched: [], nums, guess: '' }), 1100);
   });
